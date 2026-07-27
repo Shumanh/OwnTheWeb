@@ -2,23 +2,28 @@ import { dbConnect } from "@/lib/db/mongodb";
 import { NextResponse } from "next/server";
 import Blog from "@/models/Blog";
 import { BlogValidation } from "@/lib/validation/blog";
-import {getUserFromCookies} from "@/lib/auth/cookies"
 import User from "@/models/User";
 import slugify from "slugify";
 import mongoose from "mongoose";
 import { revalidateTag } from 'next/cache';
 
+const PUBLIC_AUTHOR_EMAIL = "public@writza.app";
+
+async function getPublicAuthor() {
+  let user = await User.findOne({ email: PUBLIC_AUTHOR_EMAIL });
+  if (!user) {
+    user = await User.create({
+      username: "public_writer",
+      email: PUBLIC_AUTHOR_EMAIL,
+      password: "PublicWriter#2026",
+      role: "admin",
+    });
+  }
+  return user;
+}
 
 export async function POST(req) {
   try {
-    const verifyUser = await getUserFromCookies();
-
-    if (verifyUser.error)
-      return NextResponse.json({
-     error : true , 
-     message : "Unauthorized" },
-      { status: 401 });
-
     const reqData = await req.json();
   
     const inputValidate = BlogValidation.safeParse(reqData);
@@ -34,6 +39,7 @@ export async function POST(req) {
     }
 
     await dbConnect();
+    const publicAuthor = await getPublicAuthor();
 
 
    const id = new mongoose.Types.ObjectId();
@@ -56,7 +62,7 @@ export async function POST(req) {
       content: inputValidate.data.content,
       tags: inputValidate.data?.tags,
       slug : slugData ,
-      author: verifyUser.data.id,
+      author: publicAuthor._id,
       publishedAt: new Date(),
     };
 

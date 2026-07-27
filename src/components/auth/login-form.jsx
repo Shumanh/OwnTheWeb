@@ -1,35 +1,36 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import Script from "next/script";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export function LoginForm() {
   const [message, setMessage] = useState("");
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+  const [scriptReady, setScriptReady] = useState(false);
+  const buttonRef = useRef(null);
 
   const router = useRouter();
+  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 
-  async function handleSubmit(e) {
-    e.preventDefault();
+  const handleGoogleCredential = useCallback(async function handleGoogleCredential(response) {
     setErrors({});
     setMessage("");
     setLoading(true);
 
-    const formData = new FormData(e.target);
-
-    const userData = {
-      email: formData.get("email"),
-      password: formData.get("password"),
-    };
-
-    const url = "/api/auth/login";
-    const options = { method: "POST", headers: { accept: "application/json" }, body: JSON.stringify(userData) };
-
     try {
-      const response = await fetch(url, options);
-      const data = await response.json();
+      const loginResponse = await fetch("/api/auth/google", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          accept: "application/json",
+        },
+        body: JSON.stringify({ credential: response.credential }),
+      });
+
+      const data = await loginResponse.json();
 
       if (data.error === false) {
         setMessage(data.message);
@@ -40,20 +41,39 @@ export function LoginForm() {
         setErrors(data.message || { global: "Something went wrong" });
       }
     } catch (error) {
-      // no-op
-      setErrors({ global: "An unexpected error occurred" });
+      setErrors({ global: ["Google login failed. Please try again."] });
     } finally {
       setLoading(false);
     }
-  }
+  }, [router]);
+
+  useEffect(() => {
+    if (!scriptReady || !googleClientId || !buttonRef.current || !window.google?.accounts?.id) return;
+
+    window.google.accounts.id.initialize({
+      client_id: googleClientId,
+      callback: handleGoogleCredential,
+    });
+
+    buttonRef.current.innerHTML = "";
+    window.google.accounts.id.renderButton(buttonRef.current, {
+      theme: "outline",
+      size: "large",
+      type: "standard",
+      text: "signin_with",
+      shape: "rectangular",
+      width: 352,
+    });
+  }, [scriptReady, googleClientId, handleGoogleCredential]);
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-black px-4">
+      <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" onLoad={() => setScriptReady(true)} />
       <div className="w-full max-w-md bg-neutral-900 rounded-xl shadow-lg border border-gray-800 p-6">
         <div className="mb-4">
           <Link
             href="/"
-            className="inline-flex items-center text-gray-400 hover:text-gray-300 transition-colors duration-200"
+            className="inline-flex min-h-10 items-center text-gray-400 transition-colors duration-200 hover:text-gray-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-900"
           >
             <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -62,69 +82,33 @@ export function LoginForm() {
           </Link>
         </div>
 
-        <h1 className="text-2xl font-semibold text-white">Login to your account</h1>
-        <p className="text-sm text-gray-400 mb-6">Enter your email below to login to your account</p>
+        <h1 className="text-2xl font-semibold text-white">Sign in to Writza</h1>
+        <p className="text-sm text-gray-400 mb-6">Only theshumanhere@gmail.com can access the writing tools.</p>
 
-        <form onSubmit={handleSubmit}>
-          {errors.global && <div className="mt-2 p-2 bg-red-600 text-white rounded-md">{errors.global}</div>}
-
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm text-gray-300 mb-1">Email</label>
-              <input
-                type="email"
-                id="email"
-                name="email"
-                placeholder="m@example.com"
-                className="w-full px-3 py-2 rounded-lg bg-neutral-800 border border-gray-700 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-600"
-              />
-              {errors.email && <p className="text-red-500 mt-1 text-sm">{errors.email[0]}</p>}
+        <div className="space-y-4" aria-busy={loading}>
+          {errors.global && (
+            <div className="rounded-md border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
+              {Array.isArray(errors.global) ? errors.global[0] : errors.global}
             </div>
+          )}
 
-            <div>
-              <div className="flex justify-between items-center">
-                <label className="block text-sm text-gray-300 mb-1">Password</label>
-                <Link href="#" className="text-sm text-gray-400 hover:underline">
-                  Forgot your password?
-                </Link>
-              </div>
-              <input
-                type="password"
-                id="password"
-                name="password"
-                className="w-full px-3 py-2 rounded-lg bg-neutral-800 border border-gray-700 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-600"
-              />
-              {errors.password && <p className="text-red-500 mt-1 text-sm">{errors.password[0]}</p>}
+          {!googleClientId ? (
+            <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-100">
+              Missing NEXT_PUBLIC_GOOGLE_CLIENT_ID.
             </div>
-
-            <div>
-              <button
-                type="submit"
-                className="w-full py-3 rounded-lg bg-white text-black font-medium hover:brightness-95 transition"
-              >
-                {loading ? "Logging in ..." : "Login"}
-              </button>
-
-              {message && <div className="mt-4 p-2 bg-green-600 text-white rounded-md text-center">{message}</div>}
+          ) : (
+            <div className={loading ? "pointer-events-none opacity-60" : ""}>
+              <div ref={buttonRef} className="min-h-11" />
             </div>
+          )}
 
-            <div>
-              <button
-                type="button"
-                className="w-full py-3 rounded-lg border border-gray-700 text-gray-200 bg-neutral-900 hover:bg-neutral-800 transition"
-              >
-                Login with Google
-              </button>
-            </div>
+          {loading && <p className="text-sm text-gray-400">Signing in...</p>}
+          {message && <div className="rounded-md bg-green-600 p-3 text-center text-sm text-white">{message}</div>}
 
-            <div className="text-center text-sm text-gray-400">
-              Don&apos;t have an account?{" "}
-              <Link href="/auth/signup" className="text-white underline ml-1">
-                Sign up
-              </Link>
-            </div>
+          <div className="text-center text-sm text-gray-400">
+            Access is restricted to one Google account.
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );
